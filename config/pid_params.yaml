@@ -1,0 +1,12 @@
+x_pid:
+  Kp: 0.12
+  Ki: 0.002
+  Kd: 0.02
+  max_output: 0.2
+  tau: 0.1
+y_pid:
+  Kp: 0.12
+  Ki: 0.002
+  Kd: 0.02
+  max_output: 0.2
+  tau: 0.1

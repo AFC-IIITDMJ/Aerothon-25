@@ -1,0 +1,9 @@
+numpy>=1.26.4
+shapely>=2.0.6
+matplotlib>=3.9.2
+opencv-python>=4.10.0
+ultralytics>=8.2.0
+rclpy>=3.18.2
+dronekit>=2.9.2
+pymavlink>=2.4.41
+PyYAML>=6.0.2
