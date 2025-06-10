@@ -2,7 +2,7 @@
 
 This repository contains an object-oriented refactoring of a ROS 2 and DroneKit-based autonomous drone mission. The system performs the following key functionalities:
 
-* **Real-time Object Detection**: Uses YOLOv4-tiny (via OpenCV DNN) in a ROS 2 node to detect two classes:
+* **Real-time Object Detection**: Uses YOLOv4-tiny (via OpenCV DNN) to detect target and hotspot classes:
 
   1. **Targets**: When a target is detected, the drone diverts, descends, performs precise centering using a PID controller, hovers, and then resumes the survey.
   2. **Hotspots**: Records unique hotspot locations (GPS) during the mission.
@@ -25,18 +25,44 @@ This repository contains an object-oriented refactoring of a ROS 2 and DroneKit
 
 ---
 
+## Gazebo Simulation Setup
+
+In this code, the drone is simulated in Gazebo (using the `gazebo_harmonic` plugin). The on-board camera publishes video frames on the Gazebo topic `/camera`. Follow these steps to bridge the simulated camera into ROS 2:
+
+1. **Run the Gazebo Simulator**:
+   ```bash
+   gz sim -v4 -r ~/gz_ws/src/ardupilot_gazebo/worlds/aerothon_ground2.sdf
+   ```
+   This command launches Gazebo with the `aerothon_ground2.sdf` world, which contains the simulated drone.
+
+2. **List Available Gazebo Topics**:
+   Open a new terminal and run:
+   ```bash
+   gz topic --list
+   ```
+   You should see `/camera` in the listed topics, representing the drone’s camera stream.
+
+3. **Bridge the `/camera` Topic into ROS 2**:
+   In a third terminal, run the Gazebo−ROS bridge:
+   ```bash
+   ros2 run ros_gz_bridge parameter_bridge /camera@sensor_msgs/msg/Image[gz.msgs.Image
+   ```
+   This command bridges the Gazebo `/camera` topic to a ROS 2 topic `
+/camera`, allowing the `YoloDetector` node to subscribe to it.
+
+---
+
 ## Repository Structure
 
 ```
 ├── README.md
 ├── requirements.txt
-├── src/
-│   ├── pid_controller.py
-│   ├── coordinates.py
-│   ├── detector_node.py
-│   ├── mission_manager.py
-│   └── main.py
-```
+├── pid_controller.py
+├── coordinates.py
+├── detector_node.py
+├── mission_manager.py
+└── main.py
+``` 
 
 * `pid_controller.py`: Implements the `StablePID` class for precise centering.
 * `coordinates.py`: Utility functions for pixel-to-GPS conversion and Haversine distance.
@@ -46,6 +72,33 @@ This repository contains an object-oriented refactoring of a ROS 2 and DroneKit
 
 ---
 
+## Installation and Setup
+
+1. **Clone the Repository**:
+   ```bash
+   git clone https://github.com/yourusername/autonomous-drone-survey.git
+   cd autonomous-drone-survey
+   ```
+
+2. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Set Model Paths**
+   - Update the file paths in `detector_node.py` (or `src/all_in_one.py`) to point to your YOLOv4-tiny config, weights, and class names (`.data` or `.txt`).
+
+4. **Run Gazebo and Bridge Camera**
+   - Follow the steps in **Gazebo Simulation Setup** above to launch the simulator and bridge `/camera`.
+
+5. **Run the System**:
+   - Ensure your MAVLink endpoint is running (e.g., `127.0.0.1:14550`).
+   - Launch the application:
+     ```bash
+     python3 main.py
+     ```
+
+---
 
 ## API and Configuration
 
@@ -60,7 +113,7 @@ This repository contains an object-oriented refactoring of a ROS 2 and DroneKit
 * **YOLODetector Parameters**: In `detector_node.py`, you can adjust:
 
   * `INPUT_RESOLUTION`: (width, height) for frame resizing.
-  * `FOV`: (horizontal\_FOV, vertical\_FOV) of the camera.
+  * `FOV`: (horizontal_FOV, vertical_FOV) of the camera.
   * `CONF_THRESHOLD` and `NMS_THRESHOLD` for detection filtering.
 
 * **PID Gains**: Located in `mission_manager.py` when instantiating `StablePID` for `pid_x` and `pid_y`.
