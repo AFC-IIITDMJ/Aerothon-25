@@ -1,0 +1,8 @@
+rclpy
+opencv-python
+cv\_bridge
+numpy
+pandas
+shapely
+dronekit
+pymavlink
