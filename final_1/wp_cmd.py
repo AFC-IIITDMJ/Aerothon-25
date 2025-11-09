@@ -119,9 +119,9 @@ def plot_mission(geofence, boundary, waypoints, output='mission_map.png'):
     """Simple matplotlib visualization"""
     fig, ax = plt.subplots(figsize=(12, 10))
     
-    # Geofence
+    # Survey Area
     gf = np.array(geofence + [geofence[0]])
-    ax.plot(gf[:, 1], gf[:, 0], 'r-', linewidth=2, label='Geofence')
+    ax.plot(gf[:, 1], gf[:, 0], 'r-', linewidth=2, label='Survey Area')
     ax.fill(gf[:, 1], gf[:, 0], 'r', alpha=0.1)
     
     # Boundary
