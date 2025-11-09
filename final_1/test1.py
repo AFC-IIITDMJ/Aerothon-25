@@ -9,6 +9,30 @@ from mavsdk import System
 from mavsdk.offboard import OffboardError, VelocityBodyYawspeed
 from mavsdk.mission import MissionItem, MissionPlan
 
+connection_string = "udp://:14540"
+# connection_string = "serial:///dev/ttyACM0:9600"
+altitude = 10.0  # meters
+speed = 2.0  # m/s
+
+geofence_coords = [
+    (23.177053285530338, 80.02196321569755),
+    (23.176676027386808, 80.02133826101728),
+    (23.175734110255565, 80.02166280829759),
+    (23.175891918823606, 80.02249429306535),
+    (23.176944793101267, 80.02219120345646)
+]
+
+survey_coords = [
+    (23.177053285530338, 80.02196321569755),
+    (23.176676027386808, 80.02133826101728),
+    (23.175734110255565, 80.02166280829759),
+    (23.175891918823606, 80.02249429306535),
+    (23.176944793101267, 80.02219120345646)
+]
+
+sweep_spacing = 20.0
+survey_inset = 10.0
+
 payload = False
 
 # Global parameters
@@ -69,7 +93,7 @@ camera = init_camera(camera_id=0)
 async def connect_drone():
     """Connect to drone and setup"""
     drone = System()
-    await drone.connect(system_address="udp://:14540")
+    await drone.connect(system_address=connection_string)
     print("🔗 Connecting to drone...")
     
     async for state in drone.core.connection_state():
@@ -86,7 +110,7 @@ async def connect_drone():
     return drone
 
 
-async def create_mission(drone, speed, waypoints):
+async def create_mission(drone, waypoints):
     """Create and upload mission from waypoint list"""
     mission_items = []
     
@@ -438,7 +462,7 @@ async def run_mission(waypoints):
     drone = await connect_drone()
     
     # Create and upload mission
-    await create_mission(drone, 5.0, waypoints)
+    await create_mission(drone, waypoints)
     
     # Arm drone
     print("-- Arming")
@@ -447,7 +471,7 @@ async def run_mission(waypoints):
     
     # Takeoff
     print("🛫 Taking off...")
-    await drone.action.set_takeoff_altitude(10.0)
+    await drone.action.set_takeoff_altitude(altitude=altitude)
     await drone.action.takeoff()
     
     await asyncio.sleep(10)
