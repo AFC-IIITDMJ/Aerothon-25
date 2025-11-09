@@ -33,8 +33,8 @@ survey_coords = [
     (23.176944793101267, 80.02219120345646)
 ]
 
-sweep_spacing = 20.0
-survey_inset = 10.0
+sweep_spacing = 10.0
+survey_inset = 5.0
 
 payload = False
 target_class = "hotspot"  # Change as needed
@@ -366,7 +366,7 @@ async def center_on_target(drone, camera):
     await drone.action.set_actuator(gripper_servo_channel, 1.0)
     await asyncio.sleep(1.0)
     await drone.action.set_actuator(gripper_servo_channel, 0.0)
-    # print("✅ Servo action complete")
+    print("✅ Servo action complete")
 
     hover_start = asyncio.get_event_loop().time()
 
@@ -397,11 +397,6 @@ async def center_on_target(drone, camera):
     print("✅ Returning to mission mode")
 
     return True
-
-async def control_servo():
-    """Controls the servo attached to the action actuator with index 9."""
-    async for result in action.set_actuator(gripper_servo_channel, 1.0):
-        print(f"Actuator control result: {result}")
 
 async def monitor_mission_with_detection(drone, camera):
     """Monitor mission and look for targets - FIXED VERSION"""
