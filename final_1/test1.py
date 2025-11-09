@@ -15,7 +15,7 @@ connection_string = "udp://:14540"
 # connection_string = "serial:///dev/ttyACM0:9600"
 altitude = 10.0  # meters
 speed = 10.0  # m/s
-gripper_servo_channel = 9  # Adjust as needed
+gripper_servo_channel = 1  # Adjust as needed
 
 # geofence_coords = [
 #     (23.177053285530338, 80.02196321569755),
@@ -362,12 +362,10 @@ async def center_on_target(drone, camera):
         await asyncio.sleep(0.1)
 
     # --- Trigger servo ---
-    # print("🔧 Triggering servo action...")
-    # async for result in action.set_actuator(gripper_servo_channel, 1.0):
-    #     print(f"Actuator result: {result}")
-    # await asyncio.sleep(1.0)
-    # async for result in action.set_actuator(gripper_servo_channel, 0.0):
-    #     print(f"Actuator reset: {result}")
+    print("🔧 Triggering servo action...")
+    await drone.action.set_actuator(gripper_servo_channel, 1.0)
+    await asyncio.sleep(1.0)
+    await drone.action.set_actuator(gripper_servo_channel, 0.0)
     # print("✅ Servo action complete")
 
     hover_start = asyncio.get_event_loop().time()
