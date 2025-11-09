@@ -8,7 +8,6 @@ from collections import deque
 from mavsdk import System, action
 from mavsdk.offboard import OffboardError, VelocityBodyYawspeed
 from mavsdk.mission import MissionItem, MissionPlan
-
 import wp_cmd
 
 connection_string = "udp://:14540"
@@ -29,11 +28,18 @@ survey_coords = [
 
 sweep_spacing = 10.0
 survey_inset = 5.0
-
-payload = False
 target_class = "hotspot"  # Change as needed
 
+weights = "v4 tiny custom/yolov4-tiny-custom_best.weights"
+config = "v4 tiny custom/yolov4-tiny-custom.cfg"
+names = "v4 tiny custom/obj.names"
+
+# -----------------------------Dont edit below this line-----------------------------
+
 # Global parameters
+
+payload = False
+
 image_width = 0
 image_height = 0
 center_x = 0
@@ -46,8 +52,8 @@ x_buffer = deque(maxlen=5)
 y_buffer = deque(maxlen=5)
 
 # YOLO model loading
-net = cv2.dnn.readNet("v4 tiny custom/yolov4-tiny-custom_best.weights", "v4 tiny custom/yolov4-tiny-custom.cfg")
-with open("v4 tiny custom/obj.names", "r") as f:
+net = cv2.dnn.readNet(weights, config)
+with open(names, 'r') as f:
     classes = [line.strip() for line in f.readlines()]
 
 layer_names = net.getLayerNames()
