@@ -9,6 +9,8 @@ from mavsdk import System
 from mavsdk.offboard import OffboardError, VelocityBodyYawspeed
 from mavsdk.mission import MissionItem, MissionPlan
 
+import wp_cmd
+
 connection_string = "udp://:14540"
 # connection_string = "serial:///dev/ttyACM0:9600"
 altitude = 10.0  # meters
@@ -504,10 +506,12 @@ async def run_mission(waypoints):
 async def main():
     """Entry point"""
     # Define waypoints: (latitude, longitude, altitude_in_meters)
-    waypoints = [
-        (23.176895691294206, 80.02217055884137, 7.0),
-        (23.176983850254707, 80.02192271709133, 7.0)
-    ]
+    boundary = wp_cmd.create_inset_boundary(geofence_coords, survey_inset)
+    waypoints = wp_cmd.generate_survey_waypoints(boundary, sweep_spacing, altitude)
+    # waypoints = [
+    #     (23.176895691294206, 80.02217055884137, 7.0),
+    #     (23.176983850254707, 80.02192271709133, 7.0)
+    # ]
     
     await run_mission(waypoints)
 
