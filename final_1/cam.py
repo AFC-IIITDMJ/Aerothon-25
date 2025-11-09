@@ -14,7 +14,7 @@ with open(names_path, "r") as f:
 net = cv2.dnn.readNet(weights_path, config_path)
 
 # Load the webcam
-cap = cv2.VideoCapture(2)
+cap = cv2.VideoCapture(0)
 
 # Check if the webcam is opened correctly
 if not cap.isOpened():
