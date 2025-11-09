@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import asyncio
 from collections import deque
-from mavsdk import System
+from mavsdk import System, action
 from mavsdk.offboard import OffboardError, VelocityBodyYawspeed
 from mavsdk.mission import MissionItem, MissionPlan
 
@@ -15,6 +15,7 @@ connection_string = "udp://:14540"
 # connection_string = "serial:///dev/ttyACM0:9600"
 altitude = 10.0  # meters
 speed = 10.0  # m/s
+gripper_servo_channel = 9  # Adjust as needed
 
 # geofence_coords = [
 #     (23.177053285530338, 80.02196321569755),
@@ -255,137 +256,154 @@ def draw_overlay(frame, target_x, target_y, detected, mode="MISSION", extra_text
 
 
 async def center_on_target(drone, camera):
-    """Enter offboard mode and center on target, then hover for 10 seconds"""
+    """
+    Detect and center on target in offboard mode.
+    Once centered:
+        1️⃣ Hover for 5 seconds
+        2️⃣ Descend by 5 m (using feedback)
+        3️⃣ Flip servo
+        4️⃣ Ascend back to original altitude
+    """
+
     print("🎯 Target detected! Switching to offboard mode...")
-    
+
     global payload
 
-    # Set initial velocity setpoint
+    # Set initial setpoint before starting offboard
     await drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
-    
-    # Start offboard mode
     try:
         await drone.offboard.start()
         print("🟢 Offboard mode started")
     except OffboardError as error:
         print(f"❌ Offboard start failed: {error._result.result}")
         return False
-    
-    # Centering loop
+
     centered_count = 0
     required_centered_frames = 10
-    
-    print("🔄 Centering on target...")
-    
-    max_centering_attempts = 200  # Timeout after 10 seconds (200 * 0.05)
+    max_centering_attempts = 200
     attempt = 0
-    
+
+    print("🔄 Centering on target...")
+
     while centered_count < required_centered_frames and attempt < max_centering_attempts:
         attempt += 1
-        
         ret, frame = camera.read()
-        
         if not ret or frame is None:
-            print("⚠️ Failed to read frame during centering")
             await asyncio.sleep(0.05)
             continue
-        
-        # Detect target
+
         target_x, target_y, detected = detect_target(frame)
-        
+
         if detected:
-            # Apply moving average filter
             filtered_x, filtered_y = apply_moving_average(target_x, target_y)
-            
-            # Calculate offset from center
             offset_x = filtered_x - center_x
             offset_y = filtered_y - center_y
-            
-            # Check if target is centered
+
             if abs(offset_x) <= dead_zone_x and abs(offset_y) <= dead_zone_y:
                 centered_count += 1
                 print(f"✅ Centered ({centered_count}/{required_centered_frames})")
-                await drone.offboard.set_velocity_body(
-                    VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
-                )
+                await drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
             else:
                 centered_count = 0
-                
-                # Calculate velocities
                 yaw_gain = 0.1
                 forward_gain = 0.001
-                
+
                 yaw_rate = -offset_x * yaw_gain
                 forward_speed = -offset_y * forward_gain
-                
-                # Clip velocities
+
                 yaw_rate = np.clip(yaw_rate, -30.0, 30.0)
                 forward_speed = np.clip(forward_speed, -1.0, 1.0)
-                
-                print(f"🎯 Centering... Offset: ({offset_x:4d}, {offset_y:4d})")
-                
-                # Send velocity command
+
                 await drone.offboard.set_velocity_body(
                     VelocityBodyYawspeed(forward_speed, 0.0, 0.0, yaw_rate)
                 )
         else:
-            print("⚠️ Target lost during centering")
             centered_count = 0
-            await drone.offboard.set_velocity_body(
-                VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
-            )
-        
-        # Draw overlay
+            await drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
+
         frame = draw_overlay(frame, target_x, target_y, detected, "OFFBOARD-CENTERING")
         cv2.imshow("Drone Mission with Target Detection", frame)
-        
         if cv2.waitKey(1) & 0xFF == ord('q'):
             return False
-        
+
         await asyncio.sleep(0.05)
-    
+
     if centered_count < required_centered_frames:
         print("⚠️ Centering timeout - continuing anyway")
-    
-    # Hover for 10 seconds
-    print("✅ Target centered! Hovering for 10 seconds...")
-    
+
+    print("✅ Target centered! Hovering for 5 seconds...")
+    hover_duration = 5.0
     hover_start = asyncio.get_event_loop().time()
-    hover_duration = 10.0
-    
+
     while (asyncio.get_event_loop().time() - hover_start) < hover_duration:
-        ret, frame = camera.read()
-        
-        if ret and frame is not None:
-            remaining = hover_duration - (asyncio.get_event_loop().time() - hover_start)
-            
-            target_x, target_y, detected = detect_target(frame)
-            frame = draw_overlay(frame, target_x, target_y, detected, "HOVERING", 
-                                f"Time: {remaining:.1f}s")
-            
-            cv2.imshow("Drone Mission with Target Detection", frame)
-            
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                return False
-        
-        # Maintain hover
-        await drone.offboard.set_velocity_body(
-            VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0)
-        )
-        
+        await drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
         await asyncio.sleep(0.05)
-    
-    print("✅ Hover complete! Stopping offboard mode...")
-    
-    # Stop offboard mode
+
+    # Get current altitude
+    async for pos in drone.telemetry.position():
+        current_alt = pos.relative_altitude_m
+        break
+
+    target_alt_down = current_alt - 5.0  # descend target
+    print(f"⬇️ Descending from {current_alt:.2f}m to {target_alt_down:.2f}m...")
+
+    # Descend using feedback
+    while True:
+        async for pos in drone.telemetry.position():
+            alt_now = pos.relative_altitude_m
+            break
+
+        if alt_now <= target_alt_down + 0.2:
+            print(f"✅ Reached target descent altitude: {alt_now:.2f}m")
+            await drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
+            break
+
+        await drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.5, 0.0))
+        await asyncio.sleep(0.1)
+
+    # --- Trigger servo ---
+    # print("🔧 Triggering servo action...")
+    # async for result in action.set_actuator(gripper_servo_channel, 1.0):
+    #     print(f"Actuator result: {result}")
+    # await asyncio.sleep(1.0)
+    # async for result in action.set_actuator(gripper_servo_channel, 0.0):
+    #     print(f"Actuator reset: {result}")
+    # print("✅ Servo action complete")
+
+    hover_start = asyncio.get_event_loop().time()
+
+    while (asyncio.get_event_loop().time() - hover_start) < hover_duration:
+        await drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
+        await asyncio.sleep(0.05)
+
+    # Ascend back
+    print(f"⬆️ Ascending back to {current_alt:.2f}m...")
+    while True:
+        async for pos in drone.telemetry.position():
+            alt_now = pos.relative_altitude_m
+            break
+
+        if alt_now >= current_alt - 0.2:
+            print(f"✅ Reached ascent target: {alt_now:.2f}m")
+            await drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
+            break
+
+        await drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, -0.5, 0.0))
+        await asyncio.sleep(0.1)
+
+    # Stop offboard and continue mission
+    print("🟡 Exiting offboard mode and resuming mission...")
     await drone.offboard.stop()
     payload = True
-    await asyncio.sleep(0.5)  # Give time for mode switch
-    
+    await asyncio.sleep(0.5)
     print("✅ Returning to mission mode")
-    
+
     return True
 
+async def control_servo():
+    """Controls the servo attached to the action actuator with index 9."""
+    async for result in action.set_actuator(gripper_servo_channel, 1.0):
+        print(f"Actuator control result: {result}")
 
 async def monitor_mission_with_detection(drone, camera):
     """Monitor mission and look for targets - FIXED VERSION"""
@@ -501,7 +519,7 @@ async def run_mission(waypoints):
         print("Mission cleared successfully.")
     except Exception as e:
         print(f"Failed to clear mission: {e}")
-        
+
     # Create and upload mission
     await create_mission(drone, waypoints)
     
