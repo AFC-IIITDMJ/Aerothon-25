@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 
 def create_inset_boundary(coords, inset_meters):
     """Create boundary inset by specified meters"""
@@ -64,7 +65,7 @@ def generate_survey_waypoints(boundary, spacing, altitude):
             longest_angle = np.arctan2(y2 - y1, x2 - x1)
     
     # Rotate to align with longest edge
-    theta = -longest_angle
+    theta = -longest_angle + + np.pi / 2
     cos_t, sin_t = np.cos(theta), np.sin(theta)
     
     pts_rot = [(x * cos_t - y * sin_t, x * sin_t + y * cos_t) for x, y in pts_m]
@@ -113,3 +114,34 @@ def generate_survey_waypoints(boundary, spacing, altitude):
                 waypoints.append([lat,lon,altitude])
     
     return waypoints
+
+def plot_mission(geofence, boundary, waypoints, output='mission_map.png'):
+    """Simple matplotlib visualization"""
+    fig, ax = plt.subplots(figsize=(12, 10))
+    
+    # Geofence
+    gf = np.array(geofence + [geofence[0]])
+    ax.plot(gf[:, 1], gf[:, 0], 'r-', linewidth=2, label='Geofence')
+    ax.fill(gf[:, 1], gf[:, 0], 'r', alpha=0.1)
+    
+    # Boundary
+    bd = np.array(boundary + [boundary[0]])
+    ax.plot(bd[:, 1], bd[:, 0], 'g--', linewidth=2, label='Survey Boundary')
+    
+    # Waypoints
+    lats = [w[0] for w in waypoints]
+    lons = [w[1] for w in waypoints]
+    ax.plot(lons, lats, 'b-', linewidth=1, alpha=0.7, label='Path')
+    ax.plot(lons, lats, 'bo', markersize=3)
+    ax.plot(lons[0], lats[0], 'go', markersize=10, label='Start')
+    ax.plot(lons[-1], lats[-1], 'ro', markersize=10, label='End')
+    
+    ax.set_xlabel('Longitude')
+    ax.set_ylabel('Latitude')
+    ax.set_title('Survey Mission')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    ax.axis('equal')
+    
+    plt.savefig(output, dpi=200, bbox_inches='tight')  
+    plt.show()  
