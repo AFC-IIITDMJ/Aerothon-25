@@ -14,15 +14,15 @@ import wp_cmd
 connection_string = "udp://:14540"
 # connection_string = "serial:///dev/ttyACM0:9600"
 altitude = 10.0  # meters
-speed = 2.0  # m/s
+speed = 10.0  # m/s
 
-geofence_coords = [
-    (23.177053285530338, 80.02196321569755),
-    (23.176676027386808, 80.02133826101728),
-    (23.175734110255565, 80.02166280829759),
-    (23.175891918823606, 80.02249429306535),
-    (23.176944793101267, 80.02219120345646)
-]
+# geofence_coords = [
+#     (23.177053285530338, 80.02196321569755),
+#     (23.176676027386808, 80.02133826101728),
+#     (23.175734110255565, 80.02166280829759),
+#     (23.175891918823606, 80.02249429306535),
+#     (23.176944793101267, 80.02219120345646)
+# ]
 
 survey_coords = [
     (23.177053285530338, 80.02196321569755),
@@ -36,6 +36,7 @@ sweep_spacing = 20.0
 survey_inset = 10.0
 
 payload = False
+target_class = "hotspot"  # Change as needed
 
 # Global parameters
 image_width = 0
@@ -143,35 +144,67 @@ async def create_mission(drone, waypoints):
 
 
 def detect_target(frame):
-    """Detect red object and return its center coordinates"""
+    """
+    Detect the specified target class using YOLOv4.
+    Returns (target_x, target_y, found)
+    where target_x, target_y are offsets from image center in pixels.
+    """
+
     if frame is None:
         return None, None, False
-    
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    
-    # Red color detection (adjust for your target)
-    lower_red = np.array([100, 150, 50])
-    upper_red = np.array([130, 255, 255])
-    mask = cv2.inRange(hsv, lower_red, upper_red)
-    
-    # Find contours
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    if contours:
-        largest = max(contours, key=cv2.contourArea)
-        
-        # Only consider if area is significant
-        if cv2.contourArea(largest) > 500:
-            x, y, w, h = cv2.boundingRect(largest)
-            target_x = x + w // 2
-            target_y = y + h // 2
-            
-            # Draw detection
+
+    height, width, _ = frame.shape
+
+    # Prepare input blob
+    blob = cv2.dnn.blobFromImage(frame, 1/255.0, (416, 416), swapRB=True, crop=False)
+    net.setInput(blob)
+
+    # Get YOLO output layers
+    layer_names = net.getLayerNames()
+    output_layers = [layer_names[i - 1] for i in net.getUnconnectedOutLayers()]
+
+    # Run detection
+    outs = net.forward(output_layers)
+
+    class_ids, confidences, boxes = [], [], []
+    for out in outs:
+        for detection in out:
+            scores = detection[5:]
+            class_id = np.argmax(scores)
+            confidence = scores[class_id]
+            if confidence > 0.5:
+                center_x = int(detection[0] * width)
+                center_y = int(detection[1] * height)
+                w = int(detection[2] * width)
+                h = int(detection[3] * height)
+                x = int(center_x - w / 2)
+                y = int(center_y - h / 2)
+                boxes.append([x, y, w, h])
+                confidences.append(float(confidence))
+                class_ids.append(class_id)
+
+    # Non-max suppression
+    indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
+
+    # Draw the boxes and labels on the frame
+    if len(indexes) > 0:
+        for i in indexes.flatten():
+            x, y, w, h = boxes[i]
+            label = str(classes[class_ids[i]])
+            confidence = confidences[i]
+
+            # Draw bounding box
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            cv2.circle(frame, (target_x, target_y), 5, (0, 0, 255), -1)
+            cv2.putText(frame, f"{label} {confidence:.2f}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
             
-            return target_x, target_y, True
-    
+            # Sending target info
+            if label == target_class:
+                x, y, w, h = boxes[i]
+                target_x = x + w // 2
+                target_y = y + h // 2
+
+                return target_x, target_y, True
+
     return None, None, False
 
 
@@ -463,6 +496,12 @@ async def run_mission(waypoints):
     # Connect to drone
     drone = await connect_drone()
     
+    try:
+        await drone.mission.clear_mission()
+        print("Mission cleared successfully.")
+    except Exception as e:
+        print(f"Failed to clear mission: {e}")
+        
     # Create and upload mission
     await create_mission(drone, waypoints)
     
@@ -505,14 +544,11 @@ async def run_mission(waypoints):
 
 async def main():
     """Entry point"""
-    # Define waypoints: (latitude, longitude, altitude_in_meters)
-    boundary = wp_cmd.create_inset_boundary(geofence_coords, survey_inset)
+    print("🗺️ Generating survey waypoints...")
+    boundary = wp_cmd.create_inset_boundary(survey_coords, survey_inset)
     waypoints = wp_cmd.generate_survey_waypoints(boundary, sweep_spacing, altitude)
-    # waypoints = [
-    #     (23.176895691294206, 80.02217055884137, 7.0),
-    #     (23.176983850254707, 80.02192271709133, 7.0)
-    # ]
-    
+    wp_cmd.plot_mission(survey_coords, boundary, waypoints)
+
     await run_mission(waypoints)
 
 
