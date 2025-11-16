@@ -7,8 +7,8 @@ from mavsdk.offboard import OffboardError, VelocityBodyYawspeed
 from mavsdk.mission import MissionItem, MissionPlan
 import wp_cmd
 
-# connection_string = "udp://:14540"
-connection_string = "serial:///dev/ttyACM0:9600"
+connection_string = "udp://:14540"
+# connection_string = "serial:///dev/ttyACM0:9600"
 altitude = 9.0  # meters
 speed = 10.0  # m/s
 gripper_servo_channel = 1  # Adjust as needed
@@ -277,9 +277,12 @@ async def center_on_target(drone, camera):
     centered_count = 0
     required_centered_frames = 10
     max_centering_attempts = 200
+    centering_timeout = 30.0  # seconds: give up centering after this duration
     attempt = 0
 
     print("🔄 Centering on target...")
+
+    start_time = asyncio.get_event_loop().time()
 
     while centered_count < required_centered_frames and attempt < max_centering_attempts:
         attempt += 1
@@ -319,13 +322,31 @@ async def center_on_target(drone, camera):
 
         frame = draw_overlay(frame, target_x, target_y, detected, "OFFBOARD-CENTERING")
         cv2.imshow("Drone Mission with Target Detection", frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        if cv2.waitKey(1) & 0xFF == ord('q'):   
             return False
 
         await asyncio.sleep(0.05)
 
+        # Check for centering timeout
+        if (asyncio.get_event_loop().time() - start_time) >= centering_timeout:
+            print(f"⚠️ Centering timeout after {centering_timeout}s - aborting centering and resuming mission")
+            try:
+                await drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
+                await drone.offboard.stop()
+            except Exception as e:
+                print(f"Error stopping offboard after timeout: {e}")
+            return False
+
     if centered_count < required_centered_frames:
-        print("⚠️ Centering timeout - continuing anyway")
+        # If we exit the centering loop without achieving the required centered frames,
+        # treat this as a timeout/failure and abort the centering sequence so the mission can continue.
+        print("⚠️ Centering timeout - aborting centering and resuming mission")
+        try:
+            await drone.offboard.set_velocity_body(VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
+            await drone.offboard.stop()
+        except Exception as e:
+            print(f"Error stopping offboard after abort: {e}")
+        return False
 
     print("✅ Target centered! Hovering for 5 seconds...")
     hover_duration = 5.0
@@ -477,8 +498,21 @@ async def monitor_mission_with_detection(drone, camera):
                     # Reset flag for next target
                     target_found = False
                 else:
-                    print("❌ Centering failed or interrupted")
-                    break
+                    # Centering failed or timed out - resume mission and continue monitoring
+                    print("⚠️ Centering failed or timed out - resuming mission without payload action")
+                    x_buffer.clear()
+                    y_buffer.clear()
+                    try:
+                        await drone.mission.start_mission()
+                        await asyncio.sleep(0.5)
+                    except Exception as e:
+                        print(f"Failed to resume mission after centering failure: {e}")
+
+                    # Restart progress monitoring
+                    progress_task = asyncio.create_task(track_mission_progress())
+                    target_found = False
+                    # Continue monitoring loop for next detections
+                    continue
             
             # Yield control to other async tasks
             await asyncio.sleep(0.02)  # 50 Hz loop - faster response
@@ -509,6 +543,7 @@ async def run_mission(waypoints):
     except Exception as e:
         print(f"Failed to clear mission: {e}")
 
+        await drone.mission.set_return_to_launch_after_mission(True)
     # Create and upload mission
     await create_mission(drone, waypoints)
     
